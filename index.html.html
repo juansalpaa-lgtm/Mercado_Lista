@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mercado mensual · D1 + Carulla + PriceSmart</title>
+<style>
+  :root{
+    --paper:#F3EEE1;
+    --ink:#2A2620;
+    --ink-soft:#6B6456;
+    --line:#D8D0BC;
+    --green:#3D5A40;
+    --green-soft:#E4EBDE;
+    --red:#A8402F;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Archivo', system-ui, -apple-system, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+    margin:0;
+    padding:0 0 40px 0;
+  }
+  #app{max-width:480px; margin:0 auto; position:relative;}
+  .mono{font-family:'JetBrains Mono','Courier New',monospace;}
+
+  .receipt-head{
+    position:sticky; top:0; z-index:20;
+    background:var(--paper);
+    padding:18px 18px 0;
+    border-bottom:2px dashed var(--line);
+  }
+  .receipt-head h1{font-size:15px; letter-spacing:.14em; text-transform:uppercase; margin:0 0 2px; font-weight:800;}
+  .receipt-head .sub{font-size:11px; color:var(--ink-soft); letter-spacing:.04em;}
+
+  .mode-tabs{display:flex; gap:8px; margin-top:14px;}
+  .mode-tab{
+    flex:1; padding:10px 6px; text-align:center; border-radius:2px;
+    border:1px solid var(--ink); font-size:11.5px; font-weight:800;
+    letter-spacing:.06em; text-transform:uppercase; cursor:pointer;
+    background:transparent; color:var(--ink);
+  }
+  .mode-tab.active{background:var(--ink); color:var(--paper);}
+  .mode-tab .cnt{font-family:'Courier New',monospace; font-weight:400; opacity:.8; display:block; font-size:10px; margin-top:2px;}
+
+  .grand-row{display:flex; justify-content:space-between; align-items:baseline; margin-top:14px;}
+  .grand-label{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft);}
+  .grand-total{font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; font-family:'Courier New',monospace;}
+  .progress-line{height:4px; background:var(--line); border-radius:4px; overflow:hidden; margin-top:8px;}
+  .progress-fill{height:100%; background:var(--green); width:0%; transition:width .35s ease;}
+  .checked-count{font-size:10.5px; color:var(--ink-soft); margin-top:6px; letter-spacing:.02em; padding-bottom:12px;}
+
+  .tabs{display:flex; gap:0; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{
+    flex:0 0 auto; min-width:74px; text-align:center; padding:10px 8px; font-size:11px; font-weight:800;
+    letter-spacing:.06em; text-transform:uppercase; cursor:pointer; color:var(--ink-soft);
+    border-bottom:2px solid transparent; margin-bottom:-1px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  }
+  .tab.active{color:var(--ink); border-bottom-color:var(--ink);}
+  .tab-top{display:flex; align-items:center; gap:5px;}
+  .tab-dot{width:7px; height:7px; border-radius:50%; flex:none;}
+  .tab-amount{font-size:9.5px; font-weight:400; font-family:'Courier New',monospace; color:var(--ink-soft);}
+
+  .store{margin-top:16px;}
+  .store-head{display:flex; align-items:center; gap:8px; padding:0 18px; margin-bottom:6px;}
+  .store-dot{width:9px; height:9px; border-radius:50%; flex:none;}
+  .store-name{font-size:13px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;}
+  .store-tagline{font-size:10px; color:var(--ink-soft); font-style:italic; margin-left:6px;}
+
+  .empty-state{
+    margin:18px 18px 0; padding:22px 16px; border:1px dashed var(--line); border-radius:2px;
+    text-align:center; color:var(--ink-soft); font-size:12.5px;
+  }
+  .empty-state button{margin-top:10px;}
+
+  .section{margin:14px 18px 0; border:1px solid var(--line); border-radius:2px; background:rgba(255,255,255,.35);}
+  .section-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 12px; cursor:pointer; user-select:none;
+    border-bottom:1px dashed var(--line);
+  }
+  .section-head.collapsed{border-bottom:none;}
+  .section-title{font-size:11.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; display:flex; align-items:center; gap:6px;}
+  .section-total{font-size:11.5px; color:var(--ink-soft); font-family:'Courier New',monospace;}
+  .section-caret{font-size:10px; color:var(--ink-soft); transition:transform .2s ease; margin-left:6px;}
+  .section-caret.open{transform:rotate(90deg);}
+
+  .items{padding:2px 0;}
+  .item{padding:9px 12px; border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:none;}
+  .item.on{background:var(--green-soft);}
+  .item-row{display:flex; align-items:center; gap:10px;}
+
+  .pick-btn{
+    width:24px; height:24px; flex:none; border-radius:50%; border:1.5px solid var(--ink-soft);
+    background:transparent; color:transparent; font-size:13px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; line-height:1;
+  }
+  .pick-btn.on{background:var(--green); border-color:var(--green); color:#fff;}
+  .item input[type=checkbox]{width:19px; height:19px; flex:none; accent-color:var(--green); cursor:pointer;}
+
+  .item-main{flex:1; min-width:0;}
+  .item-name{font-size:13.5px; line-height:1.3; display:block;}
+  .item-name.bought{color:var(--ink-soft); text-decoration:line-through;}
+  .item-unit{font-size:10.5px; color:var(--ink-soft); font-family:'Courier New',monospace; margin-top:1px;}
+  .price-input{
+    width:74px; font-size:11px; font-family:'Courier New',monospace;
+    border:1px solid var(--red); border-radius:2px; padding:3px 5px; margin-top:2px; background:#fff;
+  }
+  .price-input::placeholder{color:var(--red); opacity:.7;}
+  .item-line-total{font-size:12.5px; font-variant-numeric:tabular-nums; color:var(--ink-soft); flex:none; font-family:'Courier New',monospace; min-width:64px; text-align:right;}
+  .item.on .item-line-total{color:var(--green); font-weight:700;}
+  .item-line-total.zero{font-style:italic; opacity:.6; color:var(--red);}
+  .remove-x{background:none; border:none; color:var(--ink-soft); font-size:14px; cursor:pointer; padding:0 2px; flex:none;}
+
+  .qty-row{display:flex; align-items:center; gap:8px; margin-top:7px; padding-left:34px;}
+  .qty-label{font-size:10px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em;}
+  .qty-stepper{display:flex; align-items:center; border:1px solid var(--line); border-radius:2px; overflow:hidden;}
+  .qty-btn{width:26px; height:26px; border:none; background:transparent; color:var(--ink); font-size:15px; font-weight:700; cursor:pointer; line-height:1;}
+  .qty-btn:active{background:var(--line);}
+  .qty-val{width:32px; text-align:center; font-size:12.5px; font-weight:700; font-family:'Courier New',monospace; border-left:1px solid var(--line); border-right:1px solid var(--line); padding:5px 0;}
+
+  .add-product{margin:14px 18px 0;}
+  .add-toggle{
+    width:100%; padding:10px; border:1px dashed var(--ink-soft); border-radius:2px;
+    background:transparent; color:var(--ink-soft); font-size:11.5px; font-weight:700;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer;
+  }
+  .add-form{
+    margin-top:8px; padding:12px; border:1px solid var(--line); border-radius:2px; background:rgba(255,255,255,.5);
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .add-form input, .add-form select{
+    width:100%; padding:8px; border:1px solid var(--line); border-radius:2px; font-size:12.5px;
+    font-family:'Archivo', system-ui, sans-serif; background:#fff; color:var(--ink);
+  }
+  .add-form label{font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; display:block;}
+  .add-form-row{display:flex; gap:8px;}
+  .add-form-row > div{flex:1;}
+  .add-form-actions{display:flex; gap:8px; margin-top:2px;}
+
+  .footer-actions{display:flex; gap:10px; padding:20px 18px 0;}
+  .btn{
+    flex:1; padding:11px; border-radius:2px; border:1px solid var(--ink);
+    background:transparent; color:var(--ink); font-size:12px; font-weight:700;
+    letter-spacing:.06em; text-transform:uppercase; cursor:pointer;
+  }
+  .btn.primary{background:var(--ink); color:var(--paper);}
+  .note{padding:10px 18px 0; font-size:10.5px; color:var(--ink-soft); text-align:center;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function(){
+  const fmt = n => '$' + Math.round(n).toLocaleString('es-CO');
+
+  const CATALOG = [
+    { store: 'D1', color: '#C7A24A', sections: [
+      { name: 'Proteína', items: [
+        ['Filete de pechuga', 30000, 2, 'und'],
+        ['Atún', 12000, 2, 'lata'],
+        ['Deditos pescado', 10950, 1, 'paq'],
+        ['Atún filete', 17950, 1, 'paq'],
+        ['Huevos x24', 28980, 2, 'caja'],
+        ['Chorizo', 7400, 1, 'paq'],
+        ['Jamón pierna de cerdo', 10000, 1, 'paq'],
+      ]},
+      { name: 'Refrigerados / Lácteos', items: [
+        ['Queso costeño', 11400, 1, 'paq'],
+        ['Mozarella búfala', 5990, 1, 'paq'],
+        ['Mantequilla', 10000, 1, 'paq'],
+        ['Queso parmesano 120 gr', 15350, 1, 'paq'],
+        ['Yogurt griego', 17450, 1, 'paq'],
+        ['Yogurt bolsita', 4250, 1, 'paq'],
+        ['Leche deslactosada', 3700, 1, 'lt'],
+        ['Leche almendra', 8250, 2, 'lt'],
+        ['Queso pera', 5990, 1, 'paq'],
+        ['Palo queso latti', 7800, 1, 'und'],
+      ]},
+      { name: 'Despensa / Snacks', items: [
+        ['Salmas galletas', 9980, 2, 'paq'],
+        ['Quinua', 5200, 1, 'paq'],
+        ['Pan mini baguette', 4990, 1, 'paq'],
+        ['Arepa de yuca', 4350, 1, 'paq'],
+        ['Pan mantequilla', 3650, 1, 'paq'],
+        ['Arepa de chocolo', 4000, 1, 'paq'],
+        ['Salsa carnes', 2350, 1, 'und'],
+        ['Tortillas integrales', 3850, 1, 'paq'],
+        ['Tomates secos', 9250, 1, 'paq'],
+        ['Vinagre', 2850, 1, 'und'],
+        ['Vinagre manzana', 4350, 1, 'und'],
+        ['Penne', 3999, 1, 'paq'],
+        ['Besitos quinoa', 9500, 1, 'paq'],
+        ['Salsa pesto', 7690, 1, 'und'],
+        ['Club Colombia', 14400, 1, 'six pack'],
+      ]},
+      { name: 'Aseo', items: [
+        ['Jabón ropa de coco', 5490, 1, 'und'],
+        ['Scott', 6450, 3, 'rollo'],
+        ['Azul baño pati tanque', 7000, 2, 'und'],
+        ['Crema dental', 9500, 1, 'und'],
+        ['Pañitos húmedos cola', 7700, 2, 'paq'],
+        ['Bolsa peque blanca', 2200, 1, 'paq'],
+        ['Esponjas loza', 1900, 3, 'und'],
+        ['Bolsa perro', 4300, 1, 'rollo'],
+        ['Pepas suavizante', 10000, 1, 'paq'],
+        ['Papel higiénico x12', 20000, 1, 'paq'],
+        ['Jabón azul', 4490, 1, 'und'],
+      ]},
+    ]},
+    { store: 'Carulla', color: '#3D5A40', sections: [
+      { name: 'Proteína', items: [
+        ['Carne molida', 30000, 2, 'lb'],
+        ['Carne de res (Pomona)', 20500, 1, 'lb'],
+      ]},
+      { name: 'Refrigerados / Lácteos', items: [
+        ['Quesito Alpina grande', 13050, 1, 'und'],
+        ['Queso mozzarella Colanta', 12100, 1, 'paq'],
+        ['Queso crema 400 gr', 4790, 1, 'und'],
+      ]},
+      { name: 'Despensa', items: [
+        ['Pappardelle', 15000, 1, 'paq'],
+        ['Farfalle', 9000, 1, 'paq'],
+        ['Salsa pasta', 8700, 1, 'und'],
+        ['Orzo', 10000, 1, 'paq'],
+        ['Pasta de quinua', 13000, 1, 'paq'],
+      ]},
+    ]},
+    { store: 'PriceSmart', color: '#2E5AAC', sections: [
+      { name: 'Proteína', items: [
+        ['Lomo de cerdo', 45000, 2, 'kg'],
+        ['Solomo de cerdo', 0, 1, 'kg'],
+      ]},
+      { name: 'Refrigerados / Lácteos', items: [
+        ['Queso cottage', 0, 1, 'und'],
+      ]},
+      { name: 'Despensa', items: [
+        ['Café', 45000, 1, 'kg'],
+      ]},
+    ]},
+    { store: 'Frutas y Verduras', color: '#7C9A5B', generic: true, tagline: 'sin súper fijo · a veces plaza', sections: [
+      { name: 'Frutas y verduras', items: [
+        ['Uvas verdes', 9500, 1, 'lb'],
+        ['Piña', 8000, 2, 'und'],
+        ['Espinaca', 3990, 1, 'paq'],
+        ['Limón zumo', 3200, 1, 'und'],
+        ['Uvas rojas', 10000, 1, 'lb'],
+        ['Duraznos', 20900, 1, 'lb'],
+        ['Fresas', 11320, 1, 'paq'],
+        ['Cilantro', 1400, 1, 'atado'],
+        ['Manzana roja', 6160, 1, 'lb'],
+        ['Arándanos', 15800, 3, 'paq'],
+        ['Mango pintón', 9000, 2, 'und'],
+        ['Zanahoria', 3132, 1, 'lb'],
+        ['Papa criolla', 7203, 1, 'lb'],
+        ['Papa pastusa', 0, 1, 'lb'],
+        ['Cebolla', 4463, 1, 'lb'],
+        ['Aguacate', 9664, 1, 'und'],
+        ['Tomate', 9340, 1, 'lb'],
+        ['Pimentón', 3737, 2, 'und'],
+        ['Banano', 3386, 1, '680 gr'],
+        ['Lechuga', 4000, 1, 'und'],
+        ['Uchuva', 4140, 1, 'paq'],
+        ['Plátano verde', 4000, 1, 'lb'],
+        ['Plátano maduro', 3737, 1, 'lb'],
+        ['Mazorca', 5000, 1, 'und'],
+        ['Repollo morado', 7245, 1, 'und'],
+        ['Kale', 7000, 1, 'paq'],
+        ['Peras', 11500, 1, 'lb'],
+      ]},
+    ]},
+    { store: 'Carnes (varios)', color: '#8C8378', generic: true, tagline: 'sin súper fijo', sections: [
+      { name: 'Carnes', items: [
+        ['Pierna de cerdo', 20000, 1, 'kg'],
+        ['Bondiola', 24000, 1, 'kg'],
+        ['Chicharrón', 30000, 2, 'bolsa x500g'],
+      ]},
+    ]},
+  ];
+
+  function slugify(s){
+    return s.toString().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+  }
+  const DATA = CATALOG.map(store => ({
+    ...store,
+    sections: store.sections.map(sec => ({
+      ...sec,
+      items: sec.items.map(([name, price, refQty, unit]) => ({
+        id: slugify(store.store) + '__' + slugify(sec.name) + '__' + slugify(name),
+        name, price, refQty, unit,
+        unitPrice: price / refQty, custom: false,
+      })),
+    })),
+  }));
+
+  const app = document.getElementById('app');
+  const STORAGE_KEY = 'mercado-mensual-state';
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : { selected:{}, checked:{}, qty:{}, manualPrice:{}, customItems:[] };
+    }catch(e){ return { selected:{}, checked:{}, qty:{}, manualPrice:{}, customItems:[] }; }
+  }
+  let state = loadState();
+  let collapsed = {};
+  let activeStore = DATA[0].store;
+  let mode = 'plan';
+  let addFormOpenFor = null;
+
+  function saveState(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  function effectiveUnitPrice(item){
+    if (state.manualPrice[item.id] !== undefined) return state.manualPrice[item.id];
+    return item.unitPrice;
+  }
+  function getQty(item){
+    return state.qty[item.id] === undefined ? item.refQty : state.qty[item.id];
+  }
+  function lineTotal(item){ return getQty(item) * effectiveUnitPrice(item); }
+
+  function itemsForSection(store, sec){
+    const custom = state.customItems
+      .filter(c => c.store === store.store && c.section === sec.name)
+      .map(c => ({ id: c.id, name: c.name, unitPrice: c.unitPrice, refQty: c.refQty, unit: c.unit, custom: true }));
+    return sec.items.concat(custom);
+  }
+
+  function isSectionCollapsed(key){ return collapsed[key] === undefined ? true : collapsed[key]; }
+  function toggleSection(key){ collapsed[key] = !isSectionCollapsed(key); render(); }
+  function setActiveStore(s){ activeStore = s; addFormOpenFor = null; render(); }
+  function setMode(m){ mode = m; render(); }
+
+  function toggleSelect(id){
+    state.selected[id] = !state.selected[id];
+    if (!state.selected[id]) state.checked[id] = false;
+    saveState(); render();
+  }
+  function toggleBought(id){ state.checked[id] = !state.checked[id]; saveState(); render(); }
+  function changeQty(id, delta, refQty){
+    const current = state.qty[id] === undefined ? refQty : state.qty[id];
+    state.qty[id] = Math.max(0, current + delta);
+    saveState(); render();
+  }
+  function setManualPrice(id, val){
+    const n = parseFloat(val);
+    state.manualPrice[id] = isNaN(n) ? 0 : n;
+    saveState(); render();
+  }
+  function removeCustomItem(id){
+    state.customItems = state.customItems.filter(c => c.id !== id);
+    delete state.selected[id]; delete state.checked[id]; delete state.qty[id];
+    saveState(); render();
+  }
+  function addCustomItem(store, section, name, price, unit){
+    if (!name || !name.trim()) return;
+    const id = 'c' + Date.now() + Math.floor(Math.random()*1000);
+    state.customItems.push({
+      id, store, section: section || 'Otros',
+      name: name.trim(), unitPrice: parseFloat(price) || 0,
+      refQty: 1, unit: unit && unit.trim() ? unit.trim() : 'und',
+    });
+    addFormOpenFor = null;
+    saveState(); render();
+  }
+  function resetSelection(){ state.selected={}; state.checked={}; saveState(); render(); }
+  function resetBought(){ state.checked={}; saveState(); render(); }
+
+  function computeTotals(){
+    let selCount=0, selTotal=0, boughtCount=0, boughtTotal=0;
+    const storeSel = {}, storeBought = {};
+    DATA.forEach(store => {
+      let sSel=0, sBought=0;
+      store.sections.forEach(sec => itemsForSection(store, sec).forEach(item => {
+        if (state.selected[item.id]){
+          const lt = lineTotal(item);
+          selCount++; selTotal += lt; sSel += lt;
+          if (state.checked[item.id]){ boughtCount++; boughtTotal += lt; sBought += lt; }
+        }
+      }));
+      storeSel[store.store] = sSel;
+      storeBought[store.store] = sBought;
+    });
+    return {selCount, selTotal, boughtCount, boughtTotal, storeSel, storeBought};
+  }
+
+  function render(){
+    const t = computeTotals();
+    const store = DATA.find(s => s.store === activeStore);
+
+    let html = `
+      <div class="receipt-head">
+        <h1>Mercado mensual</h1>
+        <div class="sub">D1 · Carulla · PriceSmart · plaza</div>
+        <div class="mode-tabs">
+          <div class="mode-tab ${mode==='plan'?'active':''}" data-mode="plan">Seleccionar<span class="cnt">${t.selCount} productos</span></div>
+          <div class="mode-tab ${mode==='shop'?'active':''}" data-mode="shop">Ir a comprar<span class="cnt">${t.boughtCount}/${t.selCount} en el carro</span></div>
+        </div>
+    `;
+
+    if (mode === 'plan'){
+      html += `
+        <div class="grand-row"><div class="grand-label">Seleccionado</div><div class="grand-total">${fmt(t.selTotal)}</div></div>
+        <div class="checked-count">Toca el círculo junto a cada producto para agregarlo a esta vuelta.</div>
+      `;
+    } else {
+      const pct = t.selTotal ? Math.round((t.boughtTotal / t.selTotal) * 100) : 0;
+      html += `
+        <div class="grand-row"><div class="grand-label">En el carro</div><div class="grand-total">${fmt(t.boughtTotal)}</div></div>
+        <div class="progress-line"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <div class="checked-count">Meta de esta vuelta: ${fmt(t.selTotal)}</div>
+      `;
+    }
+
+    html += `
+        <div class="tabs">
+          ${DATA.map(s => `
+            <div class="tab ${activeStore===s.store?'active':''}" data-tab="${s.store}">
+              <div class="tab-top"><span class="tab-dot" style="background:${s.color}"></span>${s.store}</div>
+              <span class="tab-amount">${fmt(mode==='plan' ? t.storeSel[s.store] : t.storeBought[s.store])}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const storeHasSelection = store.sections.some(sec => itemsForSection(store, sec).some(item => state.selected[item.id]));
+
+    if (mode === 'shop' && !storeHasSelection){
+      html += `<div class="empty-state">Todavía no has seleccionado nada de ${store.store}.<br><button class="btn" data-mode="plan">Ir a seleccionar</button></div>`;
+    } else {
+      html += `
+        <div class="store">
+          <div class="store-head">
+            <span class="store-dot" style="background:${store.color}"></span>
+            <span class="store-name">${store.store}</span>
+            ${store.tagline ? `<span class="store-tagline">${store.tagline}</span>` : ''}
+          </div>
+      `;
+
+      store.sections.forEach(sec => {
+        const allItems = itemsForSection(store, sec);
+        const visibleItems = mode === 'plan' ? allItems : allItems.filter(item => state.selected[item.id]);
+        if (mode === 'shop' && visibleItems.length === 0) return;
+
+        const key = store.store + '-' + sec.name + '-' + mode;
+        const isCollapsed = isSectionCollapsed(key);
+        let secTotal = 0, secOn = 0;
+        visibleItems.forEach(item => {
+          const lt = lineTotal(item);
+          secTotal += lt;
+          if ((mode==='plan' && state.selected[item.id]) || (mode==='shop' && state.checked[item.id])) secOn += lt;
+        });
+
+        html += `
+          <div class="section">
+            <div class="section-head ${isCollapsed?'collapsed':''}" data-toggle-section="${key}">
+              <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${visibleItems.length})</span></span>
+              <span class="section-total">${fmt(secOn)} / ${fmt(secTotal)}</span>
+            </div>
+            ${isCollapsed ? '' : `<div class="items">
+              ${visibleItems.map(item => {
+                const qty = getQty(item);
+                const uPrice = effectiveUnitPrice(item);
+                const lt = qty * uPrice;
+                const isOn = mode === 'plan' ? !!state.selected[item.id] : !!state.checked[item.id];
+                const control = mode === 'plan'
+                  ? `<button class="pick-btn ${isOn?'on':''}" data-toggle-select="${item.id}">✓</button>`
+                  : `<input type="checkbox" ${isOn?'checked':''} data-toggle-bought="${item.id}">`;
+                const priceBlock = uPrice === 0
+                  ? `<input type="number" class="price-input" placeholder="poner precio" inputmode="numeric" data-manual-price="${item.id}">`
+                  : `<span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}</span>`;
+                return `
+                <div class="item ${isOn?'on':''}">
+                  <div class="item-row">
+                    ${control}
+                    <div class="item-main">
+                      <span class="item-name ${mode==='shop'&&isOn?'bought':''}">${item.name}</span>
+                      ${priceBlock}
+                    </div>
+                    <span class="item-line-total ${lt===0?'zero':''}">${lt===0?'—':fmt(lt)}</span>
+                    ${item.custom && mode==='plan' ? `<button class="remove-x" data-remove-custom="${item.id}">×</button>` : ''}
+                  </div>
+                  <div class="qty-row">
+                    <span class="qty-label">Comprar</span>
+                    <div class="qty-stepper">
+                      <button class="qty-btn" data-qty-minus="${item.id}" data-refqty="${item.refQty}">−</button>
+                      <span class="qty-val">${qty}</span>
+                      <button class="qty-btn" data-qty-plus="${item.id}" data-refqty="${item.refQty}">+</button>
+                    </div>
+                    <span class="qty-label">${item.unit}</span>
+                  </div>
+                </div>
+              `}).join('')}
+            </div>`}
+          </div>
+        `;
+      });
+
+      if (mode === 'plan'){
+        const sectionNames = store.sections.map(s => s.name);
+        const isFormOpen = addFormOpenFor === store.store;
+        html += `
+          <div class="add-product">
+            <button class="add-toggle" data-toggle-add="${store.store}">${isFormOpen ? '– Cancelar' : '+ Agregar producto'}</button>
+            ${isFormOpen ? `
+              <div class="add-form">
+                <div>
+                  <label>Producto</label>
+                  <input type="text" id="new-item-name" placeholder="ej. Solomo de res">
+                </div>
+                <div class="add-form-row">
+                  <div>
+                    <label>Precio c/u</label>
+                    <input type="number" id="new-item-price" placeholder="0" inputmode="numeric">
+                  </div>
+                  <div>
+                    <label>Unidad</label>
+                    <input type="text" id="new-item-unit" placeholder="kg, und, paq...">
+                  </div>
+                </div>
+                <div>
+                  <label>Sección</label>
+                  <select id="new-item-section">
+                    ${sectionNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+                    <option value="Otros">Otros</option>
+                  </select>
+                </div>
+                <div class="add-form-actions">
+                  <button class="btn primary" data-confirm-add="${store.store}">Agregar</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      html += `</div>`;
+    }
+
+    html += `
+      <div class="footer-actions">
+        ${mode === 'plan' ? `<button class="btn" id="btn-reset-sel">Vaciar selección</button>` : `<button class="btn" id="btn-reset-bought">Reiniciar carro</button>`}
+      </div>
+      <div class="note">${mode==='plan' ? 'Marca lo que van a comprar esta vuelta; luego pasen a "Ir a comprar".' : 'Marca lo que ya llevan en el carro.'}</div>
+    `;
+
+    app.innerHTML = html;
+
+    app.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => setMode(el.getAttribute('data-mode'))));
+    app.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => setActiveStore(el.getAttribute('data-tab'))));
+    app.querySelectorAll('[data-toggle-select]').forEach(el => el.addEventListener('click', () => toggleSelect(el.getAttribute('data-toggle-select'))));
+    app.querySelectorAll('[data-toggle-bought]').forEach(el => el.addEventListener('change', () => toggleBought(el.getAttribute('data-toggle-bought'))));
+    app.querySelectorAll('[data-toggle-section]').forEach(el => el.addEventListener('click', (e) => {
+      if (['INPUT','BUTTON','SELECT'].includes(e.target.tagName)) return;
+      toggleSection(el.getAttribute('data-toggle-section'));
+    }));
+    app.querySelectorAll('[data-qty-minus]').forEach(el => el.addEventListener('click', () => changeQty(el.getAttribute('data-qty-minus'), -1, parseFloat(el.getAttribute('data-refqty')))));
+    app.querySelectorAll('[data-qty-plus]').forEach(el => el.addEventListener('click', () => changeQty(el.getAttribute('data-qty-plus'), 1, parseFloat(el.getAttribute('data-refqty')))));
+    app.querySelectorAll('[data-manual-price]').forEach(el => {
+      el.addEventListener('change', () => setManualPrice(el.getAttribute('data-manual-price'), el.value));
+    });
+    app.querySelectorAll('[data-remove-custom]').forEach(el => el.addEventListener('click', () => removeCustomItem(el.getAttribute('data-remove-custom'))));
+    app.querySelectorAll('[data-toggle-add]').forEach(el => el.addEventListener('click', () => {
+      const s = el.getAttribute('data-toggle-add');
+      addFormOpenFor = addFormOpenFor === s ? null : s;
+      render();
+    }));
+    app.querySelectorAll('[data-confirm-add]').forEach(el => el.addEventListener('click', () => {
+      const s = el.getAttribute('data-confirm-add');
+      const name = document.getElementById('new-item-name').value;
+      const price = document.getElementById('new-item-price').value;
+      const unit = document.getElementById('new-item-unit').value;
+      const section = document.getElementById('new-item-section').value;
+      addCustomItem(s, section, name, price, unit);
+    }));
+    const rSel = document.getElementById('btn-reset-sel');
+    if (rSel) rSel.addEventListener('click', () => { if(confirm('¿Vaciar toda la selección de esta vuelta?')) resetSelection(); });
+    const rBought = document.getElementById('btn-reset-bought');
+    if (rBought) rBought.addEventListener('click', () => { if(confirm('¿Desmarcar todo lo comprado?')) resetBought(); });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
