@@ -56,6 +56,23 @@
 
   .tabs{display:flex; gap:0; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:none;}
   .tabs::-webkit-scrollbar{display:none;}
+
+  .search-row{padding:12px 18px 0;}
+  .search-box{
+    display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:2px;
+    padding:9px 12px; background:rgba(255,255,255,.5);
+  }
+  .search-box svg{flex:none; opacity:.5;}
+  .search-box input{
+    flex:1; border:none; outline:none; background:transparent; font-size:13.5px; color:var(--ink);
+    font-family:'Archivo', system-ui, sans-serif;
+  }
+  .search-box input::placeholder{color:var(--ink-soft);}
+  .search-clear{background:none; border:none; color:var(--ink-soft); font-size:16px; cursor:pointer; padding:0 2px; flex:none;}
+  .expand-toggle{
+    margin-top:8px; font-size:11px; color:var(--ink-soft); text-decoration:underline; cursor:pointer;
+    text-align:right; letter-spacing:.02em;
+  }
   .tab{
     flex:0 0 auto; min-width:74px; text-align:center; padding:10px 8px; font-size:11px; font-weight:800;
     letter-spacing:.06em; text-transform:uppercase; cursor:pointer; color:var(--ink-soft);
@@ -350,7 +367,8 @@
   let collapsed = {};
   let activeStore = DATA[0].store;
   let mode = 'plan';
-  let addFormOpenFor = null; // sección donde está abierto el formulario "+"
+  let addFormOpenFor = null;
+  let searchQuery = ''; // sección donde está abierto el formulario "+"
 
   const STORAGE_KEY = 'mercado-mensual-state';
 
@@ -448,9 +466,56 @@
     return {selCount, selTotal, boughtCount, boughtTotal, storeSel, storeBought};
   }
 
+  function normalizeText(s){
+    return s.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  }
+  function setSearchQuery(v){ searchQuery = v; render(); }
+
+  function itemRowHTML(item, modeArg){
+    const qty = getQty(item);
+    const uPrice = effectiveUnitPrice(item);
+    const lt = qty * uPrice;
+    const isOn = modeArg === 'plan' ? !!state.selected[item.id] : !!state.checked[item.id];
+    const control = modeArg === 'plan'
+      ? `<button class="pick-btn ${isOn?'on':''}" data-toggle-select="${item.id}">✓</button>`
+      : `<input type="checkbox" ${isOn?'checked':''} data-toggle-bought="${item.id}">`;
+    const priceBlock = uPrice === 0
+      ? `<input type="number" class="price-input" placeholder="poner precio" inputmode="numeric" data-manual-price="${item.id}">`
+      : `<span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}</span>`;
+    const showQty = modeArg === 'shop' || isOn;
+    return `
+      <div class="item ${isOn?'on':''}">
+        <div class="item-row">
+          ${control}
+          <div class="item-main">
+            <span class="item-name ${modeArg==='shop'&&isOn?'bought':''}">${item.name}</span>
+            ${priceBlock}
+          </div>
+          <span class="item-line-total ${lt===0?'zero':''}">${lt===0?'—':fmt(lt)}</span>
+          ${item.custom && modeArg==='plan' ? `<button class="remove-x" data-remove-custom="${item.id}">×</button>` : ''}
+        </div>
+        ${showQty ? `
+        <div class="qty-row">
+          <span class="qty-label">Comprar</span>
+          <div class="qty-stepper">
+            <button class="qty-btn" data-qty-minus="${item.id}" data-refqty="${item.refQty}">−</button>
+            <span class="qty-val">${qty}</span>
+            <button class="qty-btn" data-qty-plus="${item.id}" data-refqty="${item.refQty}">+</button>
+          </div>
+          <span class="qty-label">${item.unit}</span>
+        </div>` : ''}
+      </div>
+    `;
+  }
+
   function render(){
     const t = computeTotals();
+    const activeEl = document.activeElement;
+    const activeWasSearch = activeEl && activeEl.id === 'search-input';
+    const selStart = activeWasSearch ? activeEl.selectionStart : null;
+
     const store = DATA.find(s => s.store === activeStore);
+    const q = searchQuery.trim();
 
     let html = `
       <div class="receipt-head">
@@ -477,6 +542,17 @@
     }
 
     html += `
+      <div class="search-row">
+        <div class="search-box">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input id="search-input" type="text" placeholder="Buscar producto en toda la lista..." value="${q.replace(/"/g,'&quot;')}" data-search-input>
+          ${q ? `<button class="search-clear" data-clear-search>×</button>` : ''}
+        </div>
+      </div>
+    `;
+
+    if (!q){
+      html += `
         <div class="tabs">
           ${DATA.map(s => `
             <div class="tab ${activeStore===s.store?'active':''}" data-tab="${s.store}">
@@ -485,130 +561,132 @@
             </div>
           `).join('')}
         </div>
-      </div>
-    `;
-
-    const storeHasSelection = store.sections.some(sec => itemsForSection(store, sec).some(item => state.selected[item.id]));
-
-    if (mode === 'shop' && !storeHasSelection){
-      html += `<div class="empty-state">Todavía no has seleccionado nada de ${store.store}.<br><button class="btn" data-mode="plan">Ir a seleccionar</button></div>`;
-    } else {
-      html += `
-        <div class="store">
-          <div class="store-head">
-            <span class="store-dot" style="background:${store.color}"></span>
-            <span class="store-name">${store.store}</span>
-            ${store.tagline ? `<span class="store-tagline">${store.tagline}</span>` : ''}
-          </div>
       `;
+    }
 
-      store.sections.forEach(sec => {
-        const allItems = itemsForSection(store, sec);
-        const selectedItems = allItems.filter(item => state.selected[item.id]);
-        if (mode === 'shop' && selectedItems.length === 0) return;
+    html += `</div>`;
 
-        let visibleItems;
-        if (mode === 'plan'){
-          visibleItems = allItems;
-        } else {
-          const pending = selectedItems.filter(item => !state.checked[item.id]);
-          const bought = selectedItems.filter(item => state.checked[item.id]);
-          visibleItems = pending.concat(bought);
-        }
+    if (q){
+      let resultsHTML = '';
+      let totalMatches = 0;
+      DATA.forEach(s => {
+        s.sections.forEach(sec => {
+          const items = itemsForSection(s, sec);
+          const scoped = mode === 'shop' ? items.filter(item => state.selected[item.id]) : items;
+          const matches = scoped.filter(item => normalizeText(item.name).includes(normalizeText(q)));
+          if (matches.length === 0) return;
+          totalMatches += matches.length;
+          resultsHTML += `
+            <div class="store">
+              <div class="store-head">
+                <span class="store-dot" style="background:${s.color}"></span>
+                <span class="store-name">${s.store}</span>
+                <span class="store-tagline">${sec.name}</span>
+              </div>
+              <div class="section"><div class="items">
+                ${matches.map(item => itemRowHTML(item, mode)).join('')}
+              </div></div>
+            </div>
+          `;
+        });
+      });
+      if (totalMatches === 0){
+        resultsHTML = mode === 'shop'
+          ? `<div class="empty-state">No hay nada seleccionado que coincida con "${q}".</div>`
+          : `<div class="empty-state">No encontré ningún producto con "${q}".</div>`;
+      }
+      html += resultsHTML;
 
-        const key = store.store + '-' + sec.name + '-' + mode;
-        const isCollapsed = isSectionCollapsed(key);
-        let secTotal = 0, secOn = 0;
-        visibleItems.forEach(item => {
-          const lt = lineTotal(item);
-          secTotal += lt;
-          if ((mode==='plan' && state.selected[item.id]) || (mode==='shop' && state.checked[item.id])) secOn += lt;
+    } else {
+      const storeHasSelection = store.sections.some(sec => itemsForSection(store, sec).some(item => state.selected[item.id]));
+
+      if (mode === 'shop' && !storeHasSelection){
+        html += `<div class="empty-state">Todavía no has seleccionado nada de ${store.store}.<br><button class="btn" data-mode="plan">Ir a seleccionar</button></div>`;
+      } else {
+        html += `
+          <div class="store">
+            <div class="store-head">
+              <span class="store-dot" style="background:${store.color}"></span>
+              <span class="store-name">${store.store}</span>
+              ${store.tagline ? `<span class="store-tagline">${store.tagline}</span>` : ''}
+            </div>
+        `;
+
+        store.sections.forEach(sec => {
+          const allItems = itemsForSection(store, sec);
+          const selectedItems = allItems.filter(item => state.selected[item.id]);
+          if (mode === 'shop' && selectedItems.length === 0) return;
+
+          let visibleItems;
+          if (mode === 'plan'){
+            const notSelected = allItems.filter(item => !state.selected[item.id]);
+            visibleItems = selectedItems.concat(notSelected);
+          } else {
+            const pending = selectedItems.filter(item => !state.checked[item.id]);
+            const bought = selectedItems.filter(item => state.checked[item.id]);
+            visibleItems = pending.concat(bought);
+          }
+
+          const key = store.store + '-' + sec.name + '-' + mode;
+          const isCollapsed = isSectionCollapsed(key);
+          let secTotal = 0, secOn = 0;
+          visibleItems.forEach(item => {
+            const lt = lineTotal(item);
+            secTotal += lt;
+            if ((mode==='plan' && state.selected[item.id]) || (mode==='shop' && state.checked[item.id])) secOn += lt;
+          });
+
+          html += `
+            <div class="section">
+              <div class="section-head ${isCollapsed?'collapsed':''}" data-toggle-section="${key}">
+                <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${visibleItems.length})</span></span>
+                <span class="section-total">${fmt(secOn)} / ${fmt(secTotal)}</span>
+              </div>
+              ${isCollapsed ? '' : `<div class="items">${visibleItems.map(item => itemRowHTML(item, mode)).join('')}</div>`}
+            </div>
+          `;
         });
 
-        html += `
-          <div class="section">
-            <div class="section-head ${isCollapsed?'collapsed':''}" data-toggle-section="${key}">
-              <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${visibleItems.length})</span></span>
-              <span class="section-total">${fmt(secOn)} / ${fmt(secTotal)}</span>
+        if (mode === 'plan'){
+          const sectionNames = store.sections.map(s => s.name);
+          const isFormOpen = addFormOpenFor === store.store;
+          html += `
+            <div class="add-product">
+              <button class="add-toggle" data-toggle-add="${store.store}">${isFormOpen ? '– Cancelar' : '+ Agregar producto'}</button>
+              ${isFormOpen ? `
+                <div class="add-form">
+                  <div>
+                    <label>Producto</label>
+                    <input type="text" id="new-item-name" placeholder="ej. Solomo de res">
+                  </div>
+                  <div class="add-form-row">
+                    <div>
+                      <label>Precio c/u</label>
+                      <input type="number" id="new-item-price" placeholder="0" inputmode="numeric">
+                    </div>
+                    <div>
+                      <label>Unidad</label>
+                      <input type="text" id="new-item-unit" placeholder="kg, und, paq...">
+                    </div>
+                  </div>
+                  <div>
+                    <label>Sección</label>
+                    <select id="new-item-section">
+                      ${sectionNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+                      <option value="Otros">Otros</option>
+                    </select>
+                  </div>
+                  <div class="add-form-actions">
+                    <button class="btn primary" data-confirm-add="${store.store}">Agregar</button>
+                  </div>
+                </div>
+              ` : ''}
             </div>
-            ${isCollapsed ? '' : `<div class="items">
-              ${visibleItems.map(item => {
-                const qty = getQty(item);
-                const uPrice = effectiveUnitPrice(item);
-                const lt = qty * uPrice;
-                const isOn = mode === 'plan' ? !!state.selected[item.id] : !!state.checked[item.id];
-                const control = mode === 'plan'
-                  ? `<button class="pick-btn ${isOn?'on':''}" data-toggle-select="${item.id}">✓</button>`
-                  : `<input type="checkbox" ${isOn?'checked':''} data-toggle-bought="${item.id}">`;
-                const priceBlock = uPrice === 0
-                  ? `<input type="number" class="price-input" placeholder="poner precio" inputmode="numeric" data-manual-price="${item.id}">`
-                  : `<span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}</span>`;
-                return `
-                <div class="item ${isOn?'on':''}">
-                  <div class="item-row">
-                    ${control}
-                    <div class="item-main">
-                      <span class="item-name ${mode==='shop'&&isOn?'bought':''}">${item.name}</span>
-                      ${priceBlock}
-                    </div>
-                    <span class="item-line-total ${lt===0?'zero':''}">${lt===0?'—':fmt(lt)}</span>
-                    ${item.custom && mode==='plan' ? `<button class="remove-x" data-remove-custom="${item.id}">×</button>` : ''}
-                  </div>
-                  <div class="qty-row">
-                    <span class="qty-label">Comprar</span>
-                    <div class="qty-stepper">
-                      <button class="qty-btn" data-qty-minus="${item.id}" data-refqty="${item.refQty}">−</button>
-                      <span class="qty-val">${qty}</span>
-                      <button class="qty-btn" data-qty-plus="${item.id}" data-refqty="${item.refQty}">+</button>
-                    </div>
-                    <span class="qty-label">${item.unit}</span>
-                  </div>
-                </div>
-              `}).join('')}
-            </div>`}
-          </div>
-        `;
-      });
+          `;
+        }
 
-      if (mode === 'plan'){
-        const sectionNames = store.sections.map(s => s.name);
-        const isFormOpen = addFormOpenFor === store.store;
-        html += `
-          <div class="add-product">
-            <button class="add-toggle" data-toggle-add="${store.store}">${isFormOpen ? '– Cancelar' : '+ Agregar producto'}</button>
-            ${isFormOpen ? `
-              <div class="add-form">
-                <div>
-                  <label>Producto</label>
-                  <input type="text" id="new-item-name" placeholder="ej. Solomo de res">
-                </div>
-                <div class="add-form-row">
-                  <div>
-                    <label>Precio c/u</label>
-                    <input type="number" id="new-item-price" placeholder="0" inputmode="numeric">
-                  </div>
-                  <div>
-                    <label>Unidad</label>
-                    <input type="text" id="new-item-unit" placeholder="kg, und, paq...">
-                  </div>
-                </div>
-                <div>
-                  <label>Sección</label>
-                  <select id="new-item-section">
-                    ${sectionNames.map(n => `<option value="${n}">${n}</option>`).join('')}
-                    <option value="Otros">Otros</option>
-                  </select>
-                </div>
-                <div class="add-form-actions">
-                  <button class="btn primary" data-confirm-add="${store.store}">Agregar</button>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-        `;
+        html += `</div>`;
       }
-
-      html += `</div>`;
     }
 
     html += `
@@ -619,6 +697,11 @@
     `;
 
     app.innerHTML = html;
+
+    if (activeWasSearch){
+      const si = document.getElementById('search-input');
+      if (si){ si.focus(); if (selStart != null) { try { si.setSelectionRange(selStart, selStart); } catch(e){} } }
+    }
 
     app.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => setMode(el.getAttribute('data-mode'))));
     app.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => setActiveStore(el.getAttribute('data-tab'))));
@@ -651,6 +734,10 @@
     if (rSel) rSel.addEventListener('click', () => { if(confirm('¿Vaciar toda la selección de esta vuelta?')) resetSelection(); });
     const rBought = document.getElementById('btn-reset-bought');
     if (rBought) rBought.addEventListener('click', () => { if(confirm('¿Desmarcar todo lo comprado?')) resetBought(); });
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) searchInput.addEventListener('input', (e) => setSearchQuery(e.target.value));
+    const clearBtn = document.querySelector('[data-clear-search]');
+    if (clearBtn) clearBtn.addEventListener('click', () => setSearchQuery(''));
   }
 
   render();
