@@ -473,7 +473,7 @@
       </div>
     `;
 
-    const storeHasSelection = store.sections.some(sec => itemsForSection(store, sec).some(item => state.selected[item.id]));
+    const storeHasSelection = store.sections.some(sec => itemsForSection(store, sec).some(item => selectedState[item.id]));
 
     if (mode === 'shop' && !storeHasSelection){
       html += `<div class="empty-state">Todavía no has seleccionado nada de ${store.store}.<br><button class="btn" data-mode="plan">Ir a seleccionar</button></div>`;
@@ -489,30 +489,35 @@
 
       store.sections.forEach(sec => {
         const allItems = itemsForSection(store, sec);
-        const visibleItems = mode === 'plan' ? allItems : allItems.filter(item => state.selected[item.id]);
-        if (mode === 'shop' && visibleItems.length === 0) return;
+        const selectedItems = allItems.filter(item => selectedState[item.id]);
+        if (mode === 'shop' && selectedItems.length === 0) return;
+
+        const visibleItems = mode === 'plan' ? allItems : selectedItems.filter(item => !checkedState[item.id]);
+        const boughtItems = mode === 'shop' ? selectedItems.filter(item => checkedState[item.id]) : [];
 
         const key = store.store + '-' + sec.name + '-' + mode;
         const isCollapsed = isSectionCollapsed(key);
         let secTotal = 0, secOn = 0;
-        visibleItems.forEach(item => {
+        selectedItems.forEach(item => {
           const lt = lineTotal(item);
           secTotal += lt;
-          if ((mode==='plan' && state.selected[item.id]) || (mode==='shop' && state.checked[item.id])) secOn += lt;
+          if ((mode==='plan' && selectedState[item.id]) || (mode==='shop' && checkedState[item.id])) secOn += lt;
         });
+        const countLabel = mode === 'plan' ? `(${visibleItems.length})` : `(${visibleItems.length} pendientes${boughtItems.length ? ', ' + boughtItems.length + ' en el carro' : ''})`;
 
         html += `
           <div class="section">
             <div class="section-head ${isCollapsed?'collapsed':''}" data-toggle-section="${key}">
-              <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${visibleItems.length})</span></span>
+              <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">${countLabel}</span></span>
               <span class="section-total">${fmt(secOn)} / ${fmt(secTotal)}</span>
             </div>
             ${isCollapsed ? '' : `<div class="items">
+              ${visibleItems.length === 0 && mode==='shop' ? `<div style="padding:14px 12px; text-align:center; font-size:12px; color:var(--ink-soft);">✓ Ya llevas todo de esta sección</div>` : ''}
               ${visibleItems.map(item => {
                 const qty = getQty(item);
                 const uPrice = effectiveUnitPrice(item);
                 const lt = qty * uPrice;
-                const isOn = mode === 'plan' ? !!state.selected[item.id] : !!state.checked[item.id];
+                const isOn = mode === 'plan' ? !!selectedState[item.id] : !!checkedState[item.id];
                 const control = mode === 'plan'
                   ? `<button class="pick-btn ${isOn?'on':''}" data-toggle-select="${item.id}">✓</button>`
                   : `<input type="checkbox" ${isOn?'checked':''} data-toggle-bought="${item.id}">`;
@@ -542,6 +547,33 @@
                 </div>
               `}).join('')}
             </div>`}
+            ${mode === 'shop' && boughtItems.length > 0 ? (() => {
+              const boughtKey = key + '-bought';
+              const boughtCollapsed = isSectionCollapsed(boughtKey);
+              return `
+                <div class="section-head ${boughtCollapsed?'collapsed':''}" data-toggle-section="${boughtKey}" style="border-top:1px dashed var(--line); background:rgba(61,90,64,.06);">
+                  <span class="section-title"><span class="section-caret ${boughtCollapsed?'':'open'}">▸</span>✓ Ya comprados <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${boughtItems.length})</span></span>
+                </div>
+                ${boughtCollapsed ? '' : `<div class="items">
+                  ${boughtItems.map(item => {
+                    const qty = getQty(item);
+                    const uPrice = effectiveUnitPrice(item);
+                    const lt = qty * uPrice;
+                    return `
+                    <div class="item on">
+                      <div class="item-row">
+                        <input type="checkbox" checked data-toggle-bought="${item.id}">
+                        <div class="item-main">
+                          <span class="item-name bought">${item.name}</span>
+                          <span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}</span>
+                        </div>
+                        <span class="item-line-total">${fmt(lt)}</span>
+                      </div>
+                    </div>
+                  `}).join('')}
+                </div>`}
+              `;
+            })() : ''}
           </div>
         `;
       });
