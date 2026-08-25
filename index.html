@@ -150,6 +150,21 @@
   .qty-btn:active{background:var(--line);}
   .qty-val{width:32px; text-align:center; font-size:12.5px; font-weight:700; font-family:'JetBrains Mono','Courier New',monospace; border-left:1px solid var(--line); border-right:1px solid var(--line); padding:5px 0;}
 
+  .consume-row{display:flex; align-items:center; gap:8px; margin-top:7px; padding-left:34px; flex-wrap:wrap;}
+  .log-out-btn{
+    background:none; border:1px solid var(--line); border-radius:2px; padding:4px 8px;
+    font-size:10px; color:var(--ink-soft); cursor:pointer; font-family:'Archivo', system-ui, sans-serif;
+  }
+  .log-out-btn.logged{background:var(--green-soft); border-color:var(--green); color:var(--green); font-weight:700;}
+  .consume-hint{font-size:10px; color:var(--ink-soft);}
+  .consume-hint.due{color:var(--red); font-weight:700;}
+
+  .suggested-btn{
+    width:100%; margin-top:10px; padding:11px; border-radius:2px; border:1px solid var(--green);
+    background:var(--green); color:#fff; font-size:12px; font-weight:700;
+    letter-spacing:.04em; cursor:pointer; text-align:center;
+  }
+
   .add-product{margin:14px 18px 0;}
   .add-toggle{
     width:100%; padding:10px; border:1px dashed var(--ink-soft); border-radius:2px;
@@ -390,9 +405,10 @@
         qty: parsed.qty || {},
         manualPrice: parsed.manualPrice || {},
         customItems: parsed.customItems || [],
+        history: parsed.history || {},
       };
     }catch(e){
-      return { selected:{}, checked:{}, qty:{}, manualPrice:{}, customItems:[] };
+      return { selected:{}, checked:{}, qty:{}, manualPrice:{}, customItems:[], history:{} };
     }
   }
 
@@ -426,7 +442,40 @@
     if (!state.selected[id]) state.checked[id] = false;
     saveState(); render();
   }
-  function toggleBought(id){ state.checked[id] = !state.checked[id]; saveState(); render(); }
+  function toggleBought(id){
+    state.checked[id] = !state.checked[id];
+    if (state.checked[id]){
+      const h = state.history[id] = state.history[id] || {};
+      h.lastBought = Date.now();
+    }
+    saveState(); render();
+  }
+
+  function isSameDay(ts1, ts2){
+    if (!ts1 || !ts2) return false;
+    return new Date(ts1).toDateString() === new Date(ts2).toDateString();
+  }
+  function getHistory(id){ return state.history[id] || {}; }
+  function avgDuration(id){
+    const h = getHistory(id);
+    if (h.durations && h.durations.length) return Math.round(h.durations.reduce((a,b)=>a+b,0) / h.durations.length);
+    return null;
+  }
+  function daysSince(ts){
+    if (!ts) return null;
+    return Math.max(0, Math.floor((Date.now() - ts) / 86400000));
+  }
+  function markRanOut(id){
+    const h = state.history[id] = state.history[id] || {};
+    const now = Date.now();
+    if (h.lastBought){
+      const days = Math.max(1, Math.round((now - h.lastBought) / 86400000));
+      h.durations = (h.durations || []).concat([days]).slice(-6);
+    }
+    h.lastRanOut = now;
+    state.selected[id] = true; // queda listo para la próxima vuelta
+    saveState(); render();
+  }
   function changeQty(id, delta, refQty){
     const current = state.qty[id] === undefined ? refQty : state.qty[id];
     state.qty[id] = Math.max(0, current + delta);
@@ -480,6 +529,32 @@
   function setSearchQuery(v){ searchQuery = v; render(); }
 
   function itemRowHTML(item, modeArg){
+    if (modeArg === 'out'){
+      const h = getHistory(item.id);
+      const avg = avgDuration(item.id);
+      const since = daysSince(h.lastBought);
+      const markedToday = isSameDay(h.lastRanOut, Date.now());
+      let subtitle;
+      if (avg){
+        subtitle = `Dura ~${avg} día${avg===1?'':'s'}` + (since!=null ? ` · última compra hace ${since} día${since===1?'':'s'}` : '');
+      } else if (h.lastBought){
+        subtitle = `Comprado hace ${since} día${since===1?'':'s'} · aún sin historial de duración`;
+      } else {
+        subtitle = `Sin historial todavía`;
+      }
+      return `
+        <div class="item ${markedToday?'on':''}">
+          <div class="item-row">
+            <div class="item-main">
+              <span class="item-name">${item.name}</span>
+              <span class="item-unit">${subtitle}</span>
+            </div>
+            <button class="btn" style="flex:none; width:auto; padding:7px 11px; font-size:10.5px;" ${markedToday?'disabled':''} data-mark-out="${item.id}">${markedToday?'✓ Hoy':'Se acabó'}</button>
+          </div>
+        </div>
+      `;
+    }
+
     const qty = getQty(item);
     const uPrice = effectiveUnitPrice(item);
     const lt = qty * uPrice;
@@ -487,9 +562,11 @@
     const control = modeArg === 'plan'
       ? `<button class="pick-btn ${isOn?'on':''}" data-toggle-select="${item.id}">✓</button>`
       : `<input type="checkbox" ${isOn?'checked':''} data-toggle-bought="${item.id}">`;
+    const avg = avgDuration(item.id);
+    const freqHint = (modeArg === 'plan' && avg) ? ` · 🔄 ~${avg}d` : '';
     const priceBlock = uPrice === 0
       ? `<input type="number" class="price-input" placeholder="poner precio" inputmode="numeric" data-manual-price="${item.id}">`
-      : `<span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}</span>`;
+      : `<span class="item-unit">${fmt(uPrice)} c/u · ${item.unit}${freqHint}</span>`;
     const showQty = modeArg === 'shop' || isOn;
     return `
       <div class="item ${isOn?'on':''}">
@@ -525,6 +602,11 @@
     const store = DATA.find(s => s.store === activeStore);
     const q = searchQuery.trim();
 
+    let outTodayCount = 0;
+    DATA.forEach(s => s.sections.forEach(sec => itemsForSection(s, sec).forEach(item => {
+      if (isSameDay(getHistory(item.id).lastRanOut, Date.now())) outTodayCount++;
+    })));
+
     let html = `
       <div class="receipt-head">
         <h1>Mercado mensual</h1>
@@ -532,6 +614,7 @@
         <div class="mode-tabs">
           <div class="mode-tab ${mode==='plan'?'active':''}" data-mode="plan">Seleccionar<span class="cnt">${t.selCount} productos</span></div>
           <div class="mode-tab ${mode==='shop'?'active':''}" data-mode="shop">Ir a comprar<span class="cnt">${t.boughtCount}/${t.selCount} en el carro</span></div>
+          <div class="mode-tab ${mode==='out'?'active':''}" data-mode="out">Se acabó<span class="cnt">${outTodayCount} hoy</span></div>
         </div>
     `;
 
@@ -540,12 +623,16 @@
         <div class="grand-row"><div class="grand-label">Seleccionado</div><div class="grand-total">${fmt(t.selTotal)}</div></div>
         <div class="checked-count">Toca el círculo junto a cada producto para agregarlo a esta vuelta.</div>
       `;
-    } else {
+    } else if (mode === 'shop') {
       const pct = t.selTotal ? Math.round((t.boughtTotal / t.selTotal) * 100) : 0;
       html += `
         <div class="grand-row"><div class="grand-label">En el carro</div><div class="grand-total">${fmt(t.boughtTotal)}</div></div>
         <div class="progress-line"><div class="progress-fill" style="width:${pct}%"></div></div>
         <div class="checked-count">Meta de esta vuelta: ${fmt(t.selTotal)}</div>
+      `;
+    } else {
+      html += `
+        <div class="checked-count" style="padding-top:12px;">Marca lo que se te acabó en casa. Calculamos cada cuánto lo compras y lo dejamos listo para tu próxima vuelta.</div>
       `;
     }
 
@@ -629,10 +716,12 @@
           if (mode === 'plan'){
             const notSelected = allItems.filter(item => !state.selected[item.id]);
             visibleItems = selectedItems.concat(notSelected);
-          } else {
+          } else if (mode === 'shop') {
             const pending = selectedItems.filter(item => !state.checked[item.id]);
             const bought = selectedItems.filter(item => state.checked[item.id]);
             visibleItems = pending.concat(bought);
+          } else {
+            visibleItems = allItems;
           }
 
           const key = store.store + '-' + sec.name + '-' + mode;
@@ -648,7 +737,7 @@
             <div class="section">
               <div class="section-head ${isCollapsed?'collapsed':''}" data-toggle-section="${key}">
                 <span class="section-title"><span class="section-caret ${isCollapsed?'':'open'}">▸</span>${sec.name} <span style="font-weight:400; color:var(--ink-soft); text-transform:none;">(${visibleItems.length})</span></span>
-                <span class="section-total">${fmt(secOn)} / ${fmt(secTotal)}</span>
+                <span class="section-total">${mode==='out' ? '' : fmt(secOn)+' / '+fmt(secTotal)}</span>
               </div>
               ${isCollapsed ? '' : `<div class="items">${visibleItems.map(item => itemRowHTML(item, mode)).join('')}</div>`}
             </div>
@@ -699,9 +788,10 @@
 
     html += `
       <div class="footer-actions">
-        ${mode === 'plan' ? `<button class="btn" id="btn-reset-sel">Vaciar selección</button>` : `<button class="btn" id="btn-reset-bought">Reiniciar carro</button>`}
+        ${mode === 'plan' ? `<button class="btn" id="btn-reset-sel">Vaciar selección</button>` : ''}
+        ${mode === 'shop' ? `<button class="btn" id="btn-reset-bought">Reiniciar carro</button>` : ''}
       </div>
-      <div class="note">${mode==='plan' ? 'Marca lo que van a comprar esta vuelta; luego pasen a "Ir a comprar".' : 'Marca lo que ya llevan en el carro.'}</div>
+      <div class="note">${mode==='plan' ? 'Marca lo que van a comprar esta vuelta; luego pasen a "Ir a comprar".' : mode==='shop' ? 'Marca lo que ya llevan en el carro.' : 'Lo que marques aquí se agrega solo a tu próxima selección.'}</div>
     `;
 
     app.innerHTML = html;
@@ -725,6 +815,7 @@
       el.addEventListener('change', () => setManualPrice(el.getAttribute('data-manual-price'), el.value));
     });
     app.querySelectorAll('[data-remove-custom]').forEach(el => el.addEventListener('click', () => removeCustomItem(el.getAttribute('data-remove-custom'))));
+    app.querySelectorAll('[data-mark-out]').forEach(el => el.addEventListener('click', () => markRanOut(el.getAttribute('data-mark-out'))));
     app.querySelectorAll('[data-toggle-add]').forEach(el => el.addEventListener('click', () => {
       const s = el.getAttribute('data-toggle-add');
       addFormOpenFor = addFormOpenFor === s ? null : s;
